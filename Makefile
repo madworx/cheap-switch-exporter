@@ -3,7 +3,7 @@
 IMAGE_BASE := madworx/cheap-switch-exporter
 IMAGE_TAG := $(shell git describe --always --dirty --abbrev=7)
 IMAGE := $(IMAGE_BASE):$(IMAGE_TAG)
-DEPS := $(wildcard *.go) go.mod go.sum config.yaml.example Makefile
+DEPS := $(wildcard *.go) go.mod go.sum config.example.yaml Makefile
 
 all: help
 

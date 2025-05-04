@@ -16,7 +16,7 @@ RUN make cheap-switch-exporter
 
 FROM scratch
 
-COPY --from=build /app/cheap-switch-exporter /app/config.yaml.example /
+COPY --from=build /app/cheap-switch-exporter /app/config.example.yaml /
 
 ENTRYPOINT ["/cheap-switch-exporter"]
 

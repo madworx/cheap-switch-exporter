@@ -1,7 +1,0 @@
-*
-!*.go
-!go.sum
-!go.mod
-!config.example.yaml
-!.git
-!Makefile

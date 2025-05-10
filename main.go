@@ -24,7 +24,13 @@ var Version string
 func main() {
 	configFile := flag.String("config.file", "config.yaml", "Path to configuration file.")
 	healthcheck := flag.Bool("healthcheck", false, "Perform a health check against the configured listen address and exit.")
+	version := flag.Bool("version", false, "Print version information and exit.")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("Switch Exporter version: %s\n", Version)
+		os.Exit(0)
+	}
 
 	log.Printf("Reading configuration from %s", *configFile)
 	appConfig, err := readConfig(*configFile)

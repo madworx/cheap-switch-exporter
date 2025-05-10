@@ -181,6 +181,9 @@ func parseSTPPortStatistics(doc *goquery.Document) (STPPortStatistics, error) {
 				case 2:
 					port.Role = text
 				case 4: // Assuming Path Cost is the 5th column (index 4)
+					if text == "-" {
+						text = "-1" // Handle '-' as -1 for parsing
+					}
 					port.PathCost, err = strconv.Atoi(text)
 					if err != nil {
 						parseErrors = append(parseErrors, fmt.Sprintf("row %d, col %d (PathCost): %v", i, j, err))

@@ -19,10 +19,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var Version string
+
 func main() {
 	configFile := flag.String("config.file", "config.yaml", "Path to configuration file.")
 	healthcheck := flag.Bool("healthcheck", false, "Perform a health check against the configured listen address and exit.")
+	version := flag.Bool("version", false, "Print version information and exit.")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("Switch Exporter version: %s\n", Version)
+		os.Exit(0)
+	}
 
 	log.Printf("Reading configuration from %s", *configFile)
 	appConfig, err := readConfig(*configFile)
@@ -51,7 +59,7 @@ func main() {
 			</body></html>`))
 	})
 
-	log.Printf("Starting Switch Exporter on %s", appConfig.Listen)
+	log.Printf("Starting Switch Exporter %s on %s", Version, appConfig.Listen)
 	server := &http.Server{Addr: appConfig.Listen}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

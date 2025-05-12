@@ -4,7 +4,7 @@ LABEL maintainer="Martin Kjellstrand <madworx@github>"
 LABEL org.opencontainers.image.source="https://github.com/madworx/cheap-switch-exporter"
 LABEL org.opencontainers.image.description="Prometheus Exporter for cheap switch boxes without SNMP"
 
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make upx
 
 WORKDIR /app
 

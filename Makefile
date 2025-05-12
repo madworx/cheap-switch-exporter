@@ -12,6 +12,9 @@ cheap-switch-exporter: $(DEPS) ## Build the cheap-switch-exporter binary locally
     go build \
     -ldflags="-w -s -X 'main.Version=$(IMAGE_TAG)'" \
     -o cheap-switch-exporter
+	if [ $(shell which upx 2>/dev/null) ]; then \
+		upx --lzma cheap-switch-exporter; \
+	fi
 
 docker-image: .docker-built ## Build the docker image
 
@@ -20,7 +23,6 @@ docker-image-tag-latest: .docker-built ## Tag the docker image as latest
 
 clean: ## Clean up the build artifacts
 	rm -f cheap-switch-exporter .docker-built *~
-
 
 .docker-built: $(DEPS) Dockerfile
 	docker build -t $(IMAGE) .

@@ -70,6 +70,7 @@ type options struct {
 	logLevel      string
 	logFormat     string
 	showVersion   bool
+	healthcheck   bool
 	// deprecated collects notices to log once the logger exists.
 	deprecated []string
 }
@@ -91,6 +92,7 @@ func parseFlags(args []string, out io.Writer) (options, error) {
 	fs.StringVar(&opts.logLevel, "log.level", "info", "Log level: debug, info, warn or error.")
 	fs.StringVar(&opts.logFormat, "log.format", "text", "Log format: text or json.")
 	fs.BoolVar(&opts.showVersion, "version", false, "Print the version and exit.")
+	fs.BoolVar(&opts.healthcheck, "healthcheck", false, "Check the liveness of the exporter at -web.listen-address and exit.")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
@@ -132,6 +134,10 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if opts.showVersion {
 		_, _ = fmt.Fprintf(stdout, "cheap-switch-exporter %s (%s)\n", Version, runtime.Version())
 		return nil
+	}
+
+	if opts.healthcheck {
+		return checkHealth(ctx, opts.listenAddr)
 	}
 
 	logger, err := newLogger(stdout, opts.logLevel, opts.logFormat)
@@ -338,6 +344,32 @@ func serve(ctx context.Context, srv *http.Server, cfg config.Config, logger *slo
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	logger.Info("shutdown complete")
+	return nil
+}
+
+// checkHealth asks a running exporter for its liveness over plain HTTP. It is the
+// container health check of an image with no other program in it, so it reaches
+// the exporter on the loopback whatever address it listens on.
+func checkHealth(ctx context.Context, listenAddr string) error {
+	_, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return fmt.Errorf("healthcheck: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	url := "http://" + net.JoinHostPort("127.0.0.1", port) + healthPath
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("healthcheck: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("healthcheck: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthcheck: %s answered %s", url, resp.Status)
+	}
 	return nil
 }
 

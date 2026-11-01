@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"cheap-switch-exporter/internal/config"
+	"cheap-switch-exporter/internal/fakeswitch"
 )
 
 func TestParseFlagsDefaults(t *testing.T) {
@@ -595,5 +596,26 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bare host") {
 		t.Errorf("err = %v, want it to explain the address format", err)
+	}
+}
+
+// The image's health check: no wget in there, and it must not poll the switch.
+func TestHealthcheckFlag(t *testing.T) {
+	clearEnv(t)
+	addr, sw := startFake(t, fakeswitch.Options{})
+	listenAddr := freeAddr(t)
+	check := func() error {
+		return run(context.Background(), []string{"-healthcheck", "--web.listen-address", listenAddr}, io.Discard)
+	}
+	if err := check(); err == nil {
+		t.Error("want an error with no exporter running")
+	}
+
+	startExporter(t, writeConfig(t, fmt.Sprintf("address: %q\nusername: admin\npassword: admin\n", addr)), listenAddr)
+	if err := check(); err != nil {
+		t.Errorf("healthcheck: %v", err)
+	}
+	if c := sw.Counts(); c.PortStats != 0 {
+		t.Errorf("the health check polled the switch: %+v", c)
 	}
 }

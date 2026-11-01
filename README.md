@@ -82,6 +82,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | `--log.level` | `info` | `debug`, `info`, `warn` or `error` |
 | `--log.format` | `text` | `text` or `json` |
 | `--version` | | Print the version and exit |
+| `--healthcheck` | | Check `/healthz` of a running exporter at `--web.listen-address` over plain HTTP and exit, for the container health check |
 
 `--port` is accepted as a deprecated alias of `--web.listen-address`; it takes an
 address, not a port number, and logs a warning.

@@ -30,19 +30,18 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     -o /out/cheap-switch-exporter \
     .
 
-FROM alpine:3.24
+# Nothing in the image but the static binary. It runs as any uid it is given.
+FROM scratch
 
-LABEL maintainer="Paolo Velati <paolo.velati@gmail.com>"
-LABEL org.opencontainers.image.source="https://github.com/pvelati/cheap-switch-exporter"
+LABEL maintainer="Martin Kjellstrand <madworx@github>"
+LABEL org.opencontainers.image.source="https://github.com/madworx/cheap-switch-exporter"
 LABEL org.opencontainers.image.description="Prometheus Exporter for cheap switch boxes without SNMP"
 LABEL org.opencontainers.image.licenses="MIT"
-
-RUN adduser -D -u 1000 appuser
 
 COPY --from=build /out/cheap-switch-exporter /bin/cheap-switch-exporter
 COPY config.yaml.example /etc/cheap-switch-exporter/config.yaml.example
 
-USER appuser
+USER 1000:1000
 
 VOLUME ["/etc/cheap-switch-exporter"]
 EXPOSE 8080
@@ -50,7 +49,7 @@ EXPOSE 8080
 # Liveness only: /healthz does not poll the switch, so the health check cannot
 # turn into a second scraper hammering the device.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s \
-    CMD wget -q -O- http://127.0.0.1:8080/healthz || exit 1
+    CMD ["/bin/cheap-switch-exporter", "-healthcheck"]
 
 ENTRYPOINT ["/bin/cheap-switch-exporter"]
 CMD ["-c", "/etc/cheap-switch-exporter/config.yaml"]

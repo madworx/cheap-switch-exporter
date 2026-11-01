@@ -436,3 +436,93 @@ func TestLoadSTP(t *testing.T) {
 		t.Error("want stp refused with firmware: json")
 	}
 }
+
+func TestLoadTargetsInheritFromTheTopLevel(t *testing.T) {
+	clearEnv(t)
+	cfg, err := Load(writeConfig(t, `
+username: admin
+password: shared
+timeout_seconds: 7
+stp: true
+targets:
+  - name: first
+    address: 10.0.0.1
+  - address: "fd00::1"
+    username: other
+    password: own
+    timeout_seconds: 3
+    stp: false
+    poe: 1
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MultiTarget() {
+		t.Fatal("MultiTarget() = false")
+	}
+
+	first := cfg.TargetConfig(0)
+	if first.Address != "10.0.0.1" || first.Username != "admin" || first.Password != "shared" ||
+		first.Timeout() != 7*time.Second || !first.STP || bool(first.PoE) {
+		t.Errorf("first = %s, want the top level values", first)
+	}
+	second := cfg.TargetConfig(1)
+	if second.Address != "[fd00::1]" || second.Username != "other" || second.Password != "own" ||
+		second.Timeout() != 3*time.Second || second.STP || !bool(second.PoE) {
+		t.Errorf("second = %s, want its own values", second)
+	}
+}
+
+func TestLoadRejectsBadTargets(t *testing.T) {
+	const creds = "username: admin\npassword: secret\n"
+	tests := map[string]string{
+		"both address and targets": creds + "address: 10.0.0.9\ntargets:\n  - address: 10.0.0.1\n",
+		"no address on a target":   creds + "targets:\n  - name: first\n",
+		"scheme in an address":     creds + "targets:\n  - address: http://10.0.0.1\n",
+		"duplicate address":        creds + "targets:\n  - address: 10.0.0.1\n  - address: 10.0.0.1\n",
+		"no password anywhere":     "username: admin\ntargets:\n  - address: 10.0.0.1\n",
+		"stp on json":              creds + "targets:\n  - address: 10.0.0.1\n    firmware: json\n    stp: true\n",
+		"unknown key on a target":  creds + "targets:\n  - address: 10.0.0.1\n    nope: 1\n",
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			clearEnv(t)
+			if _, err := Load(writeConfig(t, body)); err == nil {
+				t.Fatal("want an error")
+			}
+		})
+	}
+}
+
+// The environment supplies the shared credentials, but an address there means a
+// single switch.
+func TestLoadTargetsAndEnvironment(t *testing.T) {
+	clearEnv(t)
+	t.Setenv(EnvUsername, "envuser")
+	t.Setenv(EnvPassword, "envpass")
+	body := "targets:\n  - address: 10.0.0.1\n"
+
+	cfg, err := Load(writeConfig(t, body))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.TargetConfig(0); got.Username != "envuser" || got.Password != "envpass" {
+		t.Errorf("target = %s, want the credentials from the environment", got)
+	}
+
+	t.Setenv(EnvAddress, "10.0.0.2")
+	if _, err := Load(writeConfig(t, body)); err == nil {
+		t.Error("want an error with an address in the environment")
+	}
+}
+
+func TestStringRedactsTargets(t *testing.T) {
+	clearEnv(t)
+	cfg, err := Load(writeConfig(t, "username: admin\npassword: top\ntargets:\n  - address: 10.0.0.1\n    password: per-target-secret\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.String(); strings.Contains(got, "per-target-secret") || !strings.Contains(got, "targets=1") {
+		t.Errorf("String() = %s", got)
+	}
+}

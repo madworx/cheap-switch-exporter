@@ -26,6 +26,16 @@ stp: false
 # The json family also reports port_link_speed_mbps and does not support poe.
 firmware: html
 
+# Several switches from one exporter: replace address with targets, and scrape
+# /probe?target=<address> (see "Multiple switches" in the README). Everything above
+# is the default for a target, and anything set on a target overrides it.
+#targets:
+#  - name: "Access switch"
+#    address: "192.168.1.1"
+#    stp: true
+#  - address: "192.168.1.2"
+#    password: "another"
+
 # Optional hardening of the exporter's own endpoint. Everything below can be
 # left out entirely.
 #

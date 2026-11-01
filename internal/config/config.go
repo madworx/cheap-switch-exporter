@@ -68,6 +68,8 @@ type Config struct {
 	// FirmwareHTML, which is what every device supported before this key
 	// existed.
 	Firmware string `yaml:"firmware"`
+	// Targets lists the switches of a multi-target exporter, instead of Address.
+	Targets []Target `yaml:"targets"`
 	// Web configures the exporter's own HTTP endpoint.
 	Web WebConfig `yaml:"web"`
 }
@@ -134,7 +136,8 @@ func (c Config) String() string {
 	return fmt.Sprintf("address=%s username=%s password=%s poll_rate=%s "+
 		"timeout=%s poe=%t stp=%t tls=%t auth=%t",
 		c.Address, c.Username, c.Password, c.PollRate(),
-		c.Timeout(), bool(c.PoE), c.STP, c.TLSEnabled(), c.AuthEnabled()) + " firmware=" + c.FirmwareOrDefault()
+		c.Timeout(), bool(c.PoE), c.STP, c.TLSEnabled(), c.AuthEnabled()) + " firmware=" + c.FirmwareOrDefault() +
+		fmt.Sprintf(" targets=%d", len(c.Targets))
 }
 
 func redactIfSet(s string) string {
@@ -167,7 +170,11 @@ func Load(path string) (Config, error) {
 	applyEnv(&cfg)
 	cfg.Address = normalizeAddress(strings.TrimSpace(cfg.Address))
 
-	if err := cfg.Validate(); err != nil {
+	validate := cfg.Validate
+	if cfg.MultiTarget() {
+		validate = cfg.validateTargets
+	}
+	if err := validate(); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
 	return cfg, nil

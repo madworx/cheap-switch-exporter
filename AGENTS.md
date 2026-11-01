@@ -145,7 +145,6 @@ These were considered and rejected. Do not reopen them without new information.
 |-----------|-----|
 | Retries inside a scrape | Prometheus retries by scraping again; retrying burns the scrape budget and hammers a fragile device |
 | Readiness tied to device state | Kubernetes would cycle pods whenever a switch reboots |
-| Multi-target `/probe?target=` | A different product shape, not a refactor |
 | HTTPS to the device | No evidence any of these firmwares serve TLS |
 | `prometheus/exporter-toolkit` | Roughly fifteen transitive dependencies for a project with three; TLS and basic auth are already covered by the `web` config section |
 | Renaming metrics now | Breaks every existing dashboard; belongs in a major version |

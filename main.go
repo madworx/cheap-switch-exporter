@@ -157,10 +157,20 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		newSwitchCollector(ctx, cfg, logger),
 	)
+	if !cfg.MultiTarget() {
+		registry.MustRegister(newSwitchCollector(ctx, cfg, logger))
+	}
 
 	srv := newServer(opts, cfg, registry, logger)
+	if cfg.MultiTarget() {
+		if opts.telemetryPath == probePath || opts.telemetryPath == targetsPath {
+			return fmt.Errorf("web.telemetry-path must not be %s with targets", opts.telemetryPath)
+		}
+		if err := addProbeRoutes(ctx, srv, cfg, logger); err != nil {
+			return err
+		}
+	}
 	return serve(ctx, srv, cfg, logger)
 }
 

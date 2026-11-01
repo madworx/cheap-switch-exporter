@@ -2,6 +2,8 @@
 
 Prometheus Exporter for low-cost network switches without SNMP support
 
+This is a fork of [pvelati/cheap-switch-exporter](https://github.com/pvelati/cheap-switch-exporter). It adds one exporter serving several switches ([Multiple switches](#multiple-switches)).
+
 ## Overview
 
 This Prometheus exporter retrieves port statistics from switches that lack SNMP functionality, by scraping the device's web interface.
@@ -93,6 +95,8 @@ Use `--log.level=debug` to see the values the exporter could not interpret; that
 | Path | Description |
 |------|-------------|
 | `/metrics` | Prometheus metrics. Polls the switch. |
+| `/probe?target=<address>` | Metrics of one switch, with `targets` in the configuration. Polls that switch. |
+| `/targets` | The configured switches for Prometheus HTTP service discovery, with `targets` in the configuration. |
 | `/healthz` | Liveness probe. Does **not** touch the switch. |
 | `/` | Landing page |
 
@@ -160,6 +164,42 @@ Two differences worth knowing:
 This family is implemented from the protocol and payload in the issue and
 verified against an emulated device. Nobody has confirmed it against real
 hardware yet; reports welcome.
+
+### Multiple switches
+
+List the switches under `targets` instead of `address`. Everything at the top level of the file is the default for a target, and a target can override any of it:
+
+```yaml
+username: "admin"
+password: "password"
+stp: true
+targets:
+  - name: "Access switch"        # Optional, published as the switch_name label
+    address: "192.168.1.1"
+  - address: "192.168.1.2"
+    password: "another"          # Also: username, poll_rate_seconds, timeout_seconds, poe, stp, firmware
+```
+
+Each switch is then served on `/probe?target=<address>`, in the same metrics as a single switch, with its own session, poll cache and lock. Only addresses in the file can be probed. `/metrics` keeps the exporter's own process metrics and polls nothing. `web` settings cover `/probe` and `/targets` too, `CSE_USERNAME` and `CSE_PASSWORD` become the defaults, and `CSE_ADDRESS` is refused alongside `targets`.
+
+Point Prometheus at the exporter like any multi-target exporter. The relabelling makes each switch's address its `instance`, which is what the example dashboard selects on:
+
+```yaml
+scrape_configs:
+  - job_name: cheap-switches
+    metrics_path: /probe
+    # At least timeout_seconds for each request of a poll: 1, plus 2 for poe and 1 for stp.
+    scrape_timeout: 15s
+    http_sd_configs:
+      - url: http://exporter:8080/targets
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: exporter:8080
+```
 
 ### Polling behaviour
 

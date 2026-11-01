@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -150,6 +151,22 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	logger.Info("configuration loaded", "path", opts.configPath, "config", cfg.String())
 
+	// A dedicated registry keeps the exposed set explicit and makes the
+	// exporter safe to instantiate more than once, for instance in tests.
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		newSwitchCollector(ctx, cfg, logger),
+	)
+
+	srv := newServer(opts, cfg, registry, logger)
+	return serve(ctx, srv, cfg, logger)
+}
+
+// newSwitchCollector builds the client and the collector of the switch cfg
+// describes.
+func newSwitchCollector(ctx context.Context, cfg config.Config, logger *slog.Logger) *collector.Collector {
 	clientOpts := switchclient.Options{
 		Address:  cfg.Address,
 		Username: cfg.Username,
@@ -161,26 +178,15 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if cfg.FirmwareOrDefault() == config.FirmwareJSON {
 		client = switchclient.NewJSON(clientOpts)
 	}
-
-	// A dedicated registry keeps the exposed set explicit and makes the
-	// exporter safe to instantiate more than once, for instance in tests.
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		collector.New(ctx, collector.Options{
-			Client:      client,
-			Logger:      logger,
-			PoE:         bool(cfg.PoE),
-			STP:         cfg.STP,
-			Timeout:     cfg.Timeout(),
-			MinInterval: cfg.PollRate(),
-			Version:     Version,
-		}),
-	)
-
-	srv := newServer(opts, cfg, registry, logger)
-	return serve(ctx, srv, cfg, logger)
+	return collector.New(ctx, collector.Options{
+		Client:      client,
+		Logger:      logger,
+		PoE:         bool(cfg.PoE),
+		STP:         cfg.STP,
+		Timeout:     cfg.Timeout(),
+		MinInterval: cfg.PollRate(),
+		Version:     Version,
+	})
 }
 
 func newLogger(w io.Writer, level, format string) (*slog.Logger, error) {
@@ -200,19 +206,19 @@ func newLogger(w io.Writer, level, format string) (*slog.Logger, error) {
 	}
 }
 
-func newServer(opts options, cfg config.Config, registry *prometheus.Registry, logger *slog.Logger) *http.Server {
-	errLog := slog.NewLogLogger(logger.Handler(), slog.LevelError)
-
-	// A scrape performs up to three sequential requests to the switch, and one
-	// more with STP, so the handler and write budgets have to be derived from
-	// the device timeout.
+// scrapeBudget bounds one scrape of the switch cfg describes. A scrape performs
+// up to three sequential requests to the switch, and one more with STP, so the
+// handler and write budgets have to be derived from the device timeout.
+func scrapeBudget(cfg config.Config) time.Duration {
 	requests := time.Duration(3)
 	if cfg.STP {
 		requests++
 	}
-	scrapeBudget := requests*cfg.Timeout() + 2*time.Second
+	return requests*cfg.Timeout() + 2*time.Second
+}
 
-	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+func newMetricsHandler(registry *prometheus.Registry, budget time.Duration, errLog *log.Logger) http.Handler {
+	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 		ErrorLog: errLog,
 		// Serve whatever could be collected instead of failing the whole
 		// scrape when a single collector misbehaves.
@@ -223,7 +229,7 @@ func newServer(opts options, cfg config.Config, registry *prometheus.Registry, l
 		// exporter starts refusing its own scrapers. Keep it well above any
 		// realistic number of Prometheus servers plus health checks.
 		MaxRequestsInFlight: 10,
-		Timeout:             scrapeBudget,
+		Timeout:             budget,
 		// Deliberately not enabling OpenMetrics. It requires counter series to
 		// be named <name>_total; the historical names here are not, so the
 		// OpenMetrics encoder would have to downgrade every packet counter to
@@ -232,6 +238,14 @@ func newServer(opts options, cfg config.Config, registry *prometheus.Registry, l
 		// counters is the real fix and needs a major version.
 		EnableOpenMetrics: false,
 	})
+}
+
+func newServer(opts options, cfg config.Config, registry *prometheus.Registry, logger *slog.Logger) *http.Server {
+	errLog := slog.NewLogLogger(logger.Handler(), slog.LevelError)
+
+	budget := scrapeBudget(cfg)
+
+	handler := newMetricsHandler(registry, budget, errLog)
 	handler = promhttp.InstrumentMetricHandler(registry, handler)
 	if cfg.AuthEnabled() {
 		handler = basicAuth(handler, cfg.Web.AuthUsername, cfg.Web.AuthPassword)
@@ -269,7 +283,7 @@ func newServer(opts options, cfg config.Config, registry *prometheus.Registry, l
 		// Bounded read phases close the door on slow-header (Slowloris) clients.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      scrapeBudget + 5*time.Second,
+		WriteTimeout:      budget + 5*time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 		ErrorLog:          errLog,
